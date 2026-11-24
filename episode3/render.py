@@ -434,7 +434,7 @@ def main():
     t_to = float(args[args.index("--to") + 1]) if "--to" in args else tl["total"]
     frames = range(int(t_from * FPS), int(t_to * FPS))
     ff = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
-                           "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "slow", "-crf", "13",
+                           "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "slow", "-b:v", "6500k", "-maxrate", "9000k", "-bufsize", "18000k",
                            "-pix_fmt", "yuv420p", "-tune", "grain", out], stdin=subprocess.PIPE)
     with Pool(4) as pool:
         for k, b in enumerate(pool.imap(frame, frames, chunksize=6)):
