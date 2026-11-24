@@ -220,6 +220,32 @@ def creak(dur=1.6, gain=0.35):
 
 # ------------------------------------------------------------------ voice processing
 
+
+def load(path, sr=SR):
+    raw = subprocess.check_output(["ffmpeg", "-v", "error", "-i", path, "-ac", "2", "-ar", str(sr), "-f", "f32le", "-"])
+    return np.frombuffer(raw, np.float32).reshape(-1, 2).copy()
+
+
+def ff(path, af):
+    raw = subprocess.check_output(["ffmpeg", "-v", "error", "-i", path, "-af", af, "-ac", "2", "-ar", str(SR), "-f", "f32le", "-"])
+    return np.frombuffer(raw, np.float32).reshape(-1, 2).copy()
+
+
+def norm_peak(x, p=0.9):
+    m = np.abs(x).max() + 1e-9
+    return x / m * p
+
+
+def comp(x, thr=0.25, ratio=3.0):
+    lvl = np.abs(x).max(axis=1)
+    e = signal.lfilter([0.002], [1, -0.998], lvl)
+    g = np.where(e > thr, (thr + (e - thr) / ratio) / (e + 1e-9), 1.0)
+    return x * g[:, None]
+
+
+
+
+
 def voice(lid):
     ln = TL.line(lid)
     path = os.path.join(TL.VOICE, lid + ".mp3")
