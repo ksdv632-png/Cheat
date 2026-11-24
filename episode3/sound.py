@@ -1,4 +1,4 @@
-"""Sound design + voice processing + final mix for episode 2 (all procedural, 48 kHz stereo).
+"""Sound design + voice processing + final mix for episode 3 (all procedural, 48 kHz stereo).
 
 python3 sound.py  ->  build/mix.wav
 """
@@ -7,7 +7,7 @@ import numpy as np
 from scipy import signal
 
 import timeline as TL
-from render import wt, knock_times, L
+from render import wt, L
 
 SR = 48000
 ROOT = TL.ROOT
@@ -219,27 +219,6 @@ def creak(dur=1.6, gain=0.35):
 
 
 # ------------------------------------------------------------------ voice processing
-def load(path, sr=SR):
-    raw = subprocess.check_output(["ffmpeg", "-v", "error", "-i", path, "-ac", "2", "-ar", str(sr), "-f", "f32le", "-"])
-    return np.frombuffer(raw, np.float32).reshape(-1, 2).copy()
-
-
-def ff(path, af):
-    raw = subprocess.check_output(["ffmpeg", "-v", "error", "-i", path, "-af", af, "-ac", "2", "-ar", str(SR), "-f", "f32le", "-"])
-    return np.frombuffer(raw, np.float32).reshape(-1, 2).copy()
-
-
-def norm_peak(x, p=0.9):
-    m = np.abs(x).max() + 1e-9
-    return x / m * p
-
-
-def comp(x, thr=0.25, ratio=3.0):
-    lvl = np.abs(x).max(axis=1)
-    e = signal.lfilter([0.002], [1, -0.998], lvl)
-    g = np.where(e > thr, (thr + (e - thr) / ratio) / (e + 1e-9), 1.0)
-    return x * g[:, None]
-
 
 def voice(lid):
     ln = TL.line(lid)
@@ -257,47 +236,38 @@ def voice(lid):
         x = comp(norm_peak(x), 0.3, 3)
         x = reverb(x, 0.24, length=1.6, tau=0.45, bright=4000, seed=12)
         g = 0.85
-    elif spk == "victor":
-        if lid == "l15":  # behind a steel door
-            x = filt(norm_peak(x), "low", 650, 4)
-            x = x + filt(x, "bp", (300, 380), 2) * 1.5
-            x = reverb(x, 0.45, length=2.2, tau=0.6, bright=1200, seed=13)
-            g = 0.75
-        else:
-            x = comp(norm_peak(x), 0.25, 4)
-            x = reverb(x, 0.12, length=1.0, tau=0.3, seed=14)
-            g = 1.0
     elif spk == "mom":
-        if lid == "l18":  # memory, distant, echoing
-            x = filt(norm_peak(x), "low", 3200, 2)
-            x = reverb(x, 0.65, length=3.5, tau=1.1, bright=3000, seed=15, pre=0.05)
-            d = np.zeros_like(x); k = sec(0.32)
-            d[k:] += x[:-k] * 0.35; d[2 * k:] += x[:-2 * k] * 0.15
-            x = x + d
-            g = 0.75
+        if lid == "l07":  # the lullaby, warm, distant, through the steel
+            x = filt(norm_peak(x), "low", 2600, 2)
+            x = reverb(x, 0.5, length=3.0, tau=0.9, bright=2800, seed=15, pre=0.04)
+            g = 0.85
         else:  # behind the door; the last word sinks into something that is not her
             clean = filt(norm_peak(x), "low", 800, 4)
-            low = ff(path, "rubberband=pitch=0.62:formant=shifted")
-            low = filt(norm_peak(low)[:len(clean)], "low", 600, 4)
-            if len(low) < len(clean):
-                low = np.vstack([low, np.zeros((len(clean) - len(low), 2), np.float32)])
-            t_m = TL.word_time("l21", 3) - ln["start"]
-            ramp_ = np.clip((np.arange(len(clean)) / SR - t_m + 0.1) / 0.5, 0, 1)[:, None]
-            x = clean * (1 - 0.4 * ramp_) + low * ramp_ * 0.9
-            x = reverb(x, 0.4, length=2.2, tau=0.6, bright=1200, seed=16)
+            x = reverb(clean, 0.4, length=2.2, tau=0.6, bright=1200, seed=16)
+            if lid == "l21":
+                low = ff(path, "rubberband=pitch=0.7:formant=shifted")
+                low = filt(norm_peak(low)[:len(clean)], "low", 700, 4)
+                if len(low) < len(clean):
+                    low = np.vstack([low, np.zeros((len(clean) - len(low), 2), np.float32)])
+                ramp_ = np.clip((np.arange(len(clean)) / SR - 1.0) / 0.6, 0, 1)[:, None]
+                x = reverb(clean * (1 - 0.45 * ramp_) + low * ramp_ * 0.9, 0.4, length=2.2, tau=0.6, bright=1200, seed=16)
             g = 0.8
-    else:  # thing: the narrator's voice, pitched down, doubled, whispering
-        a = ff(path, "rubberband=pitch=0.74:formant=shifted")
-        b = ff(path, "rubberband=pitch=0.5:formant=shifted")
-        n = len(x)
-        a = np.resize(a, (n, 2)); b = np.resize(b, (n, 2))
-        wh = filt(x, "high", 2200, 2) * 1.6
-        x = norm_peak(a) * 0.9 + norm_peak(b) * 0.35 + norm_peak(wh) * 0.35
-        x = comp(x, 0.3, 4)
-        x = reverb(x, 0.3, length=2.5, tau=0.8, bright=2500, seed=17)
-        if lid == "l20":  # right at your left ear
-            x = x * np.array([1.0, 0.35], np.float32)
-        g = 0.95
+    else:  # thing
+        if lid == "l14":  # Dima's own voice, a whisper right at the shoulder
+            x = filt(norm_peak(x), "high", 300, 2) * 1.2
+            x = reverb(x, 0.35, length=1.8, tau=0.5, bright=3500, seed=18)
+            x = x * np.array([0.35, 1.0], np.float32)
+            g = 0.95
+        else:  # the narrator's voice pitched down, doubled, whispering
+            a = ff(path, "rubberband=pitch=0.74:formant=shifted")
+            b = ff(path, "rubberband=pitch=0.5:formant=shifted")
+            n = len(x)
+            a = np.resize(a, (n, 2)); b = np.resize(b, (n, 2))
+            wh = filt(x, "high", 2200, 2) * 1.6
+            x = norm_peak(a) * 0.9 + norm_peak(b) * 0.35 + norm_peak(wh) * 0.35
+            x = comp(x, 0.3, 4)
+            x = reverb(x, 0.3, length=2.5, tau=0.8, bright=2500, seed=17)
+            g = 0.95
     return norm_peak(x, 0.95) * g
 
 
@@ -312,11 +282,8 @@ def build():
     def at_scene(name, k=0):
         return [s for s in tl["scenes"] if s["name"] == name][k]
 
-    # ---------- intensity curve for the drone (per scene) ----------
-    level = {"cold": 0.45, "back": 0.5, "wall_line": 0.55, "count": 0.62, "oldman": 0.55, "hands": 0.68, "hands_late": 0.5,
-             "victor_reveal": 0.72, "eyes": 0.8, "victor_face": 0.9, "step": 0.15, "flicker": 0.0, "five": 0.65,
-             "knock": 0.7, "door_voice": 0.62, "oldman_door": 0.7, "flashback": 0.35, "flashback_mom": 0.25,
-             "turn": 0.9, "ear": 0.55, "door_mom": 0.35, "endcard": 0.45}
+    level = {"door_cold": 0.35, "door_walk": 0.5, "oldman": 0.55, "door_hand": 0.6, "lullaby": 0.3, "dima_face": 0.7,
+             "door_reach": 0.8, "silence": 0.05, "behind": 0.75, "wheel": 0.85, "open": 0.7, "endcard": 0.45}
     lv = np.zeros(n_all, np.float32)
     for s in tl["scenes"]:
         lv[sec(s["t0"]):sec(s["t1"])] = level[s["name"]]
@@ -324,13 +291,8 @@ def build():
     title_end = L("l01")["start"] - 0.25
     lv[sec(L("l00")["end"] + 0.5):sec(title_end)] *= 0.4
     lv = filt(lv, "low", 1.2, 2).astype(np.float32)
-    # overall slow rise of tension
     lv *= (0.8 + 0.4 * np.clip(tt / total, 0, 1)).astype(np.float32)
-    # turn: silence after the smash cut
-    cut = L("l19")["end"] - 0.02
-    lv[sec(cut):sec(cut + 1.4)] = 0
 
-    # drone: detuned low partials + slowly sweeping filtered air
     d = (sine(41.2, n_all) * 0.5 + sine(41.6, n_all) * 0.5 + sine(61.8, n_all) * 0.28 + sine(82.0, n_all) * 0.18
          + sine(123.6 + 0.8 * np.sin(tt * 0.2), n_all) * 0.08)
     air = filt(noise(n_all), "bp", (90, 900), 2) * 0.35
@@ -338,194 +300,106 @@ def build():
     drone = (d * 0.55 + air + air_hi) * lv
     T.buf[:, 0] += drone * 0.32
     T.buf[:, 1] += np.roll(drone, 300) * 0.32
-    # dissonant high string-like cluster that grows in the second half
     cl = (sine(587.3, n_all) + sine(622.3, n_all) * 0.8 + sine(659.3 + 2 * np.sin(tt * 0.3), n_all) * 0.6)
     cl = filt(cl * (0.6 + 0.4 * np.sin(tt * 3.1)), "low", 1500, 2) * np.clip((tt - 40) / 60, 0, 1) * lv * 0.035
     T.buf[:, 0] += cl; T.buf[:, 1] += np.roll(cl, 900)
 
-    # ---------- heartbeat: tempo rises 62 -> 118 bpm ----------
-    hb_on = {"back", "count", "oldman", "hands", "victor_reveal", "eyes", "victor_face", "five", "oldman_door", "ear", "door_voice"}
-    t = 2.0
-    hb = heartbeat()
+    # heartbeat 62 -> 118 bpm
+    hb_on = {"door_walk", "door_hand", "dima_face", "door_reach", "behind", "wheel", "oldman"}
+    hb = heartbeat(); t = 2.0
     while t < total - 4:
         s = TL.scene_at(t)
-        bpm = 62 + 56 * (t / total) + (18 if s["name"] in ("victor_face", "eyes") else 0)
+        bpm = 62 + 56 * (t / total) + (14 if s["name"] in ("door_reach", "wheel") else 0)
         if s["name"] in hb_on:
-            g = 0.55 if s["name"] not in ("victor_face", "ear") else 0.8
-            T.add(t, hb, g)
+            T.add(t, hb, 0.7 if s["name"] in ("door_reach", "behind") else 0.5)
         t += 60.0 / bpm
 
-    # ---------- cold open ----------
+    # cold open + title
     T.add(0.15, sub_hit(3.0, 55, 25, 0.7))
     T.add(L("l00")["start"] - 0.6, reverse_swell(0.7, 0.35))
-    # ---------- title ----------
+    dc = at_scene("door_cold")
+    T.add(dc["t0"] + 0.2, frost_crackle(dc["t1"] - dc["t0"], 0.16))
+    n = sec(dc["t1"] - dc["t0"])
+    T.add(dc["t0"], stereo(filt(noise(n), "bp", (400, 1400), 2) * (0.4 + 0.6 * np.sin(np.linspace(0, 3, n)) ** 2) * 0.05, 0.2))
     tst = L("l00")["end"] + 0.5
-    T.add(tst + 0.25, glitch_burst(0.35, 0.4, 1))
-    T.add(tst + 0.3, sub_hit(2.5, 80, 30, 0.9))
-    T.add(tst + 1.2, glitch_burst(0.08, 0.25, 2))
-    T.add(title_end - 0.35, glitch_burst(0.3, 0.35, 3))
+    T.add(tst + 0.25, glitch_burst(0.35, 0.4, 1)); T.add(tst + 0.3, sub_hit(2.5, 80, 30, 0.9))
+    T.add(tst + 1.2, glitch_burst(0.08, 0.25, 2)); T.add(title_end - 0.35, glitch_burst(0.3, 0.35, 3))
 
-    # ---------- back: breathing behind him (syncs on "будто учился") ----------
-    l1, l2 = L("l01"), L("l02")
-    t = l1["end"] - 0.2
-    while t < l2["end"] + 0.8:
-        cyc = 2.6 if t < l2["start"] else 2.6 + 1.0 * min(1, (t - l2["start"]) / (l2["end"] - l2["start"]))
-        inh = breath(cyc * 0.45, True, 0.22); exh = breath(cyc * 0.5, False, 0.2)
-        T.add(t, stereo(inh, -0.6)); T.add(t + cyc * 0.47, stereo(exh, -0.5))
-        t += cyc
-    T.add(wt("l01", 2) - 0.2, whoosh(0.5, True, 0.15))  # the head almost turns
+    # walking to the door: slow footsteps
+    w0 = L("l02")["start"]
+    for i in range(7):
+        n = sec(0.13)
+        T.add(w0 + i * 0.5, stereo(filt(noise(n), "low", 500) * expdecay(n, 0.03) * 0.3, (-1) ** i * 0.2))
 
-    # ---------- wall line: shuffling steps ----------
-    k_start = wt("l03", 2)
-    for i in range(6):
-        for j in range(2):
-            n = sec(0.12)
-            st = filt(noise(n), "bp", (150, 1200)) * expdecay(n, 0.03) * 0.25
-            T.add(k_start + i * 0.22 - 0.3 + j * 0.28, reverb(stereo(st, (i - 2.5) / 3), 0.3, length=1.0, tau=0.3))
+    # old man cuts in
+    T.add(L("l03")["start"] - 0.1, whoosh(0.3, True, 0.15))
 
-    # ---------- count ----------
-    t_people = wt("l04", 0); t_sh = wt("l04", 2)
-    for i in range(6):
-        T.add(t_people - 0.25 + i * 0.11, tick(0.25, 1800))
-    for n_ in range(7):
-        T.add(t_sh - 0.2 + n_ * 0.1, tick(0.3 if n_ < 6 else 0.5, 1400 if n_ < 6 else 900))
-    T.add(t_sh + 0.5, sub_hit(2.5, 70, 28, 0.9))
-    T.add(t_sh + 0.5, glitch_burst(0.1, 0.2, 4))
+    # hand on the metal
+    t_h = L("l05")["start"] + 0.7
+    T.add(t_h, metal_knock(0.25, seed=50)); T.add(t_h, frost_crackle(2.5, 0.2))
+    T.add(t_h + 0.1, sub_hit(1.2, 70, 35, 0.4))
 
-    # ---------- hands ----------
-    t_up = wt("l06", 2) - 0.1
-    for i in range(6):
-        n = sec(0.25)
-        T.add(t_up + i * 0.015, stereo(filt(noise(n), "bp", (400, 3000)) * expdecay(n, 0.06) * 0.08, (i - 2.5) / 3))
-    t_pochti = wt("l06", 4)
-    T.add(t_pochti - 1.3, riser(1.25, 0.35))
-    T.add(t_pochti - 0.05, sub_hit(3.0, 60, 25, 1.0))
-    T.add(t_pochti - 0.05, glitch_burst(0.12, 0.3, 5))
-    # hands_late: slow clock ticks, underwater
-    hl = at_scene("hands_late")
-    t = hl["t0"] + 0.2
-    while t < hl["t1"] - 0.3:
-        T.add(t, tick(0.18, 700)); t += 0.6
-    T.add(hl["t0"] + 0.2 + (hl["t1"] - hl["t0"] - 0.8) * 0.6 / 1.4 * 1.0, sub_hit(2.0, 90, 40, 0.5))
+    # lullaby: warm pad that dies with the last note
+    ll = at_scene("lullaby")
+    n = sec(ll["t1"] - ll["t0"])
+    pad = (sine(220.0, n) + sine(277.2, n) * 0.7 + sine(329.6, n) * 0.5) * 0.06 * env_adsr(n, 0.8, 0.1, 1, 1.0)
+    T.add(ll["t0"], stereo(filt(pad, "low", 900)))
 
-    # ---------- victor reveal / eyes ----------
-    T.add(wt("l08", 3) - 0.05, sub_hit(2.0, 80, 35, 0.6))
-    words = L("l09")["words"]
-    for k in range(5):
-        T.add(words[min(len(words) - 1, k % len(words))]["t0"] + 0.12 * k, click(0.35, 4000))
-    T.add(words[-1]["t0"] + 0.2, reverse_swell(0.7, 0.3))
+    # dima face: breath and his own heartbeat louder
+    dm = at_scene("dima_face", 0)
+    T.add(dm["t0"] + 0.2, stereo(breath(1.2, True, 0.2), 0.0)); T.add(dm["t0"] + 1.4, stereo(breath(1.4, False, 0.2), 0.0))
+    # reach
+    t_w = wt("l09", 5)
+    T.add(t_w - 1.0, riser(1.0, 0.3)); T.add(L("l10")["start"] - 0.05, sub_hit(2.0, 60, 25, 0.6))
 
-    # ---------- victor shouts ----------
-    T.add(wt("l10", 2), sub_hit(1.5, 90, 40, 0.6))
-    T.add(wt("l10", 2), glitch_burst(0.1, 0.25, 6))
+    # silence: cold hiss only, then the shoulder whisper
+    sl = at_scene("silence")
+    T.add(sl["t0"], frost_crackle(sl["t1"] - sl["t0"], 0.1))
+    t_w1 = L("l14")["start"]
+    T.add(t_w1 - 0.6, reverse_swell(0.6, 0.4)); T.add(t_w1 + 0.4, sub_hit(2.5, 70, 25, 0.8))
+    T.add(t_w1 + 0.4, glitch_burst(0.12, 0.3, 4))
+    # breath at the ear while he explains
+    bh = at_scene("behind")
+    t = L("l15")["start"]
+    while t < L("l15")["end"]:
+        T.add(t, stereo(breath(1.0, True, 0.14), 0.8)); T.add(t + 1.1, stereo(breath(1.1, False, 0.13), 0.8)); t += 2.4
+    T.add(L("l16")["start"] - 0.4, reverse_swell(0.5, 0.3))
 
-    # ---------- step: sound gets sucked out, tinnitus ----------
-    t_step = wt("l11", 2) - 0.1
-    n = sec(0.3)
-    T.add(t_step + 0.6, reverb(stereo(filt(noise(n), "bp", (100, 900)) * expdecay(n, 0.05) * 0.4, 0.4), 0.3))
-    t_ost = wt("l11", 9)
-    T.add(t_ost - 1.2, reverse_swell(1.25, 0.45))
-    T.add(t_ost, sub_hit(3.0, 55, 22, 0.9))
+    # wheel moves by itself
+    t_d = wt("l18", 8, True) - 0.35
+    T.add(t_d, metal_knock(0.9, seed=60)); T.add(t_d, sub_hit(1.5, 60, 30, 0.6)); T.add(t_d, glitch_burst(0.1, 0.25, 5))
+    t_s = L("l19")["start"]
+    T.add(t_s + 0.1, creak(2.4, 0.4)); T.add(t_s + 0.9, metal_knock(0.5, seed=61)); T.add(t_s + 1.9, metal_knock(0.6, seed=62))
+    T.add(t_s + 2.1, riser(1.3, 0.35, 120, 1800))
+
+    # door opens
+    t_o = L("l20")["start"]
+    T.add(t_o - 0.2, sub_hit(4.0, 60, 20, 1.0)); T.add(t_o, creak(2.6, 0.5)); T.add(t_o, glitch_burst(0.1, 0.35, 6))
     n = sec(5.0)
-    tin = sine(5600, n) * env_adsr(n, 1.0, 0.1, 1.0, 1.5) * 0.035
-    T.add(t_ost, stereo(tin))
-
-    # ---------- flicker ----------
-    t_m = wt("l12", 1)
-    pattern = [(0.00, 0), (0.10, 1), (0.16, 0), (0.42, 1), (0.50, 0), (0.95, 1), (1.02, 0), (1.55, 1)]
-    for t0, s in pattern:
-        T.add(t_m + t0, click(0.6 if s == 0 else 0.45))
-        if s == 1:
-            T.add(t_m + t0, buzz(0.06, 0.12))
-    for k, (t0, s) in enumerate(pattern):
-        if s == 0:
-            n = sec(0.3)
-            wh = filt(noise(n), "bp", (300, 3000)) * np.sin(np.linspace(0, np.pi, n)) * 0.12 * (1 + k * 0.3)
-            T.add(t_m + t0 + 0.02, stereo(wh, 0.4))
-    T.add(t_m + 1.55, sub_hit(3.0, 50, 20, 1.0))
-    T.add(t_m + 1.55, glitch_burst(0.12, 0.3, 7))
-
-    # ---------- five ----------
-    t5 = wt("l13", 2); t7 = wt("l13", 7)
-    T.add(t5, glitch_burst(0.15, 0.3, 8)); T.add(t5, tick(0.4, 1100))
-    T.add(t7, sub_hit(2.0, 75, 30, 0.7))
-
-    # ---------- knocks ----------
-    for i, k in enumerate(knock_times()):
-        T.add(k, metal_knock(1.0 - 0.05 * i, seed=20 + i))
-        T.add(k, sub_hit(1.2, 60, 30, 0.45))
-
-    # ---------- door voice: frost ----------
-    dv = at_scene("door_voice")
-    T.add(dv["t0"] + 0.2, frost_crackle(dv["t1"] - dv["t0"], 0.18))
-    n = sec(dv["t1"] - dv["t0"])
-    wind = filt(noise(n), "bp", (400, 1400), 2) * (0.4 + 0.6 * np.sin(np.linspace(0, 3, n)) ** 2) * 0.05
-    T.add(dv["t0"], stereo(wind, 0.2))
-
-    # ---------- flashback: muffled world, projector rattle ----------
-    fb0 = at_scene("flashback")["t0"]; fb1 = at_scene("turn")["t0"]
-    n = sec(fb1 - fb0)
-    tt2 = np.arange(n) / SR
-    rattle = filt(noise(n), "bp", (1500, 5000), 2) * (0.5 + 0.5 * np.sign(np.sin(2 * np.pi * 24 * tt2))) * 0.025
-    pad = (sine(110, n) + sine(164.8, n) * 0.6 + sine(220.5, n) * 0.3) * 0.05 * env_adsr(n, 1.0, 0.1, 1, 0.5)
-    wind = filt(noise(n), "low", 500) * 0.12
-    T.add(fb0, stereo(rattle + filt(pad, "low", 600) + wind))
-    T.add(fb0, sub_hit(2.0, 60, 30, 0.4))
-    # running footsteps, muffled
-    t = fb0 + 0.3
-    while t < L("l18")["start"]:
-        n = sec(0.1)
-        T.add(t, stereo(filt(noise(n), "low", 400) * expdecay(n, 0.02) * 0.2, rng.uniform(-0.6, 0.6)))
-        t += 0.17 + rng.uniform(0, 0.08)
-
-    # ---------- turn ----------
-    t_turn = wt("l19", 2)
-    T.add(t_turn - 0.9, riser(1.0, 0.45, 150, 2500))
-    T.add(t_turn - 0.25, whoosh(0.45, True, 0.6))
-    T.add(t_turn + 0.12, sub_hit(1.0, 120, 50, 0.6))
-    T.add(cut, sub_hit(4.0, 60, 20, 1.2))
-    T.add(cut, glitch_burst(0.1, 0.35, 9))
-    n = sec(2.0)
-    T.add(cut + 0.05, stereo(sine(6200, n) * env_adsr(n, 0.05, 0.1, 1.0, 1.4) * 0.04))
-
-    # ---------- ear: flashlight dying ----------
-    l20 = L("l20")
-    die_t = l20["end"] + 0.55
-    for k in range(6):
-        T.add(die_t + k * 0.1 * (1 + 0.3 * k), click(0.35 - 0.04 * k, 3000))
-    T.add(l20["start"] - 0.7, reverse_swell(0.75, 0.35))
-    # ---------- door_mom ----------
-    l21 = L("l21")
-    T.add(l21["start"] - 1.25, metal_knock(0.35, seed=31))
-    T.add(l21["start"] - 0.85, metal_knock(0.3, seed=32))
-    t_mama = wt("l21", 3)
-    T.add(t_mama + 0.4, creak(1.4, 0.3))
-    n = sec(4.0)
-    T.add(t_mama - 0.3, stereo(sine(np.geomspace(55, 38, n), n) * env_adsr(n, 1.5, 0.1, 1, 1.5) * 0.25))
-    # ---------- end card ----------
+    T.add(t_o + 0.3, stereo(filt(noise(n), "bp", (200, 1200), 2) * env_adsr(n, 1.5, 0.1, 1, 1.5) * 0.12))
+    t_c = L("l22")["start"]
+    T.add(t_c - 0.3, reverse_swell(0.6, 0.4))
+    for k in range(11):
+        T.add(t_c + 0.1 + k * 0.23, stereo(breath(0.7, k % 2 == 0, 0.1), (k - 5) / 6))
     ec = at_scene("endcard")
-    T.add(ec["t0"] + 0.3, sub_hit(3.5, 70, 22, 1.0))
-    T.add(ec["t0"] + 0.3, glitch_burst(0.3, 0.35, 10))
+    T.add(ec["t0"] + 0.3, sub_hit(3.5, 70, 22, 1.0)); T.add(ec["t0"] + 0.3, glitch_burst(0.3, 0.35, 10))
     T.add(ec["t1"] - 1.4, metal_knock(0.25, seed=40))
 
-    # ---------- voices with ducking ----------
+    # voices with ducking
     vb = np.zeros_like(T.buf)
     for ln in tl["lines"]:
-        v = voice(ln["id"])
-        i = sec(ln["start"])
+        v = voice(ln["id"]); i = sec(ln["start"])
         vb[i:i + len(v)] += v[:len(vb) - i]
     vl = np.abs(vb).max(axis=1)
     duck_env = signal.lfilter([0.0015], [1, -0.9985], (vl > 0.02).astype(np.float32))
     duck = 1 - 0.45 * np.clip(duck_env * 1.3, 0, 1)
-    mix = T.buf * duck[:, None] + vb
-    mix = mix[:sec(total)]
-    # gentle master: soft clip + normalise
+    mix = (T.buf * duck[:, None] + vb)[:sec(total)]
     mix = np.tanh(mix * 1.1) / np.tanh(1.1)
     mix = mix / (np.abs(mix).max() + 1e-9) * 0.97
     out = os.path.join(ROOT, "build", "mix.wav")
     raw = (mix * 32767).astype(np.int16).tobytes()
-    p = subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "s16le", "-ar", str(SR), "-ac", "2", "-i", "-",
-                        "-af", "loudnorm=I=-15:TP=-1.0:LRA=14", "-ar", str(SR), out], input=raw, check=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "s16le", "-ar", str(SR), "-ac", "2", "-i", "-",
+                    "-af", "loudnorm=I=-15:TP=-1.0:LRA=14", "-ar", str(SR), out], input=raw, check=True)
     print("mix ->", out, f"{total:.2f}s")
 
 
