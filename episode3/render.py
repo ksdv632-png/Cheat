@@ -72,13 +72,28 @@ def face_common(c, T, lt, S, kind="old", fear=0.0, look=None, light_fn=None):
 def hand(c, x, y, s, a=1.0, ang=0.0, rim=0.5):
     """silhouette of a right hand seen from the back, fingers pointing up. (x,y) = wrist centre."""
     c.save(); c.translate(x, y); c.rotate(ang); c.scale(s, s)
-    body = paint((3, 3, 4), a)
-    c.drawRRect(skia.RRect.MakeRectXY(skia.Rect(-62, -150, 62, 20), 38, 38), body)
-    for i, (fx, fl) in enumerate([(-52, 120), (-26, 150), (0, 160), (26, 148), (50, 112)]):
-        c.drawRRect(skia.RRect.MakeRectXY(skia.Rect(fx - 13, -150 - fl, fx + 13, -120), 13, 13), body)
-    c.drawRRect(skia.RRect.MakeRectXY(skia.Rect(-110, -110, -50, -20), 26, 26), body)  # thumb
-    c.drawArc(skia.Rect(-62, -150, 62, 20), 200, 120, False, paint(BEAM, rim * a, stroke=4, blur=3))
-    c.drawRect(skia.Rect(-50, 18, 50, 160), body)  # forearm
+    body = paint((4, 4, 5), a)
+    rimp = paint(BEAM, rim * a, stroke=3, blur=2.5)
+    # forearm + wrist, slightly tapered
+    fa = skia.Path(); fa.moveTo(-44, 170); fa.lineTo(-40, 10); fa.quadTo(0, -6, 40, 10); fa.lineTo(48, 170); fa.close()
+    c.drawPath(fa, body)
+    # palm: wider at the knuckles
+    pm = skia.Path(); pm.moveTo(-42, 12); pm.quadTo(-66, -60, -58, -128); pm.quadTo(0, -146, 58, -126)
+    pm.quadTo(64, -60, 42, 12); pm.close()
+    c.drawPath(pm, body)
+    # fingers: tapered, slightly spread, three segments of rounding
+    for (bx, ln, rot, w) in [(-44, 104, -9, 25), (-15, 132, -3, 27), (15, 140, 2, 27), (44, 118, 8, 25)]:
+        c.save(); c.translate(bx, -120); c.rotate(rot)
+        fp = skia.Path(); fp.moveTo(-w / 2, 10); fp.lineTo(-w * 0.42, -ln + w * 0.4)
+        fp.quadTo(0, -ln - w * 0.25, w * 0.42, -ln + w * 0.4); fp.lineTo(w / 2, 10); fp.close()
+        c.drawPath(fp, body)
+        c.drawLine(-w * 0.45, -ln * 0.2, -w * 0.4, -ln * 0.85, rimp)
+        c.restore()
+    # thumb, angled out
+    c.save(); c.translate(-50, -40); c.rotate(-48)
+    tp = skia.Path(); tp.moveTo(-15, 20); tp.lineTo(-13, -70); tp.quadTo(0, -88, 13, -70); tp.lineTo(17, 20); tp.close()
+    c.drawPath(tp, body); c.restore()
+    c.drawPath(pm, rimp)
     c.restore()
 
 
@@ -92,7 +107,7 @@ def sc_door_cold(c, T, lt, S):
     e = VE.at("l00", T)
     c.clear(col((0, 0, 0)))
     c.save(); cam(c, 540, 900, 1.0 + 0.10 * ease_io(lt / (S["t1"] - S["t0"])))
-    door(c, T, light=0.55 + 0.1 * e, wheel_rot=0.3, seam_glow=0.18 + 0.25 * e, frost=0.35 + 0.8 * fr)
+    door(c, T, light=0.55 + 0.1 * e, wheel_rot=0.3, seam_glow=0.18 + 0.25 * e, frost=0.2 + 0.5 * fr)
     c.restore()
     rings(c, 540, 1500, 420, 120, 5, T, a=0.10 + 0.20 * e, rgb=(190, 215, 255), speed=0.3)
     return dict(grain=12, vig=1.0, tint=(170, 195, 230, 0.35))
@@ -118,7 +133,7 @@ def sc_door_walk(c, T, lt, S):
     q = ease_io(ramp(T, S["t0"] + title_dur, S["t1"]))
     c.clear(col((0, 0, 0)))
     c.save(); cam(c, 540, lerp(1000, 900, q), lerp(0.85, 1.55, q))
-    door(c, T, light=0.7 + 0.1 * q, wheel_rot=0.3, seam_glow=0.35, frost=1.3)
+    door(c, T, light=0.7 + 0.1 * q, wheel_rot=0.3, seam_glow=0.35, frost=0.75)
     c.restore()
     # torch beam bobbing: steps toward the door
     bob = math.sin(T * 6.5) * 14 * (1 - q * 0.4)
@@ -127,13 +142,28 @@ def sc_door_walk(c, T, lt, S):
 
 
 def sc_oldman(c, T, lt, S):
-    nxt = S["lines"][0]["id"]
-    scared = 0.35 + 0.25 * ramp(T, S["t0"], S["t1"])
+    """three beats of the old man, each framed differently: warning, pressure, realisation."""
+    first = S["lines"][0]["id"]
+    beat = {"l03": 0, "l10": 1}.get(first, 2)
+    scared = [0.35, 0.55, 0.9][beat] + 0.2 * ramp(T, S["t0"], S["t1"])
     def look(T):
         a = smooth(ramp(T, S["t0"], S["t0"] + 0.5))
+        if beat == 2:  # he slowly looks at Dima
+            return (lerp(-0.2, 0.9, a), lerp(0.1, 0.25, a))
         return (lerp(0.0, -1.0, a), 0.1)
-    face_common(c, T, lt, S, "old", fear=scared, look=look, light_fn=lambda T: 0.85 + 0.06 * vnoise(T * 14, 9))
-    return dict(grain=13, vig=1.0)
+    z, cx, cy = [(1.0, 540, 860), (1.35, 540, 820), (1.15, 600, 880)][beat]
+    c.save(); c.translate(cx, cy); c.scale(z, z); c.translate(-540, -860)
+    light = [lambda T: 0.85 + 0.06 * vnoise(T * 14, 9), lambda T: 0.8 + 0.08 * vnoise(T * 18, 4),
+             lambda T: 0.55 + 0.25 * (vnoise(T * 9, 2) > -0.4)][beat]
+    face_common(c, T, lt, S, "old", fear=scared, look=look, light_fn=light)
+    c.restore()
+    if beat == 2:  # torch from below
+        c.drawRect(skia.Rect(0, 0, W, H), paint(shader=linear(0, H, 0, 0, [(0, BEAM, 0.18), (0.5, BEAM, 0.0)]), blend="screen"))
+    tint = [None, (220, 170, 160, 0.25), (170, 190, 220, 0.35)][beat]
+    fx = dict(grain=13, vig=1.0, ca=[0, 1, 2][beat])
+    if tint:
+        fx["tint"] = tint
+    return fx
 
 
 def sc_door_hand(c, T, lt, S):
@@ -142,7 +172,7 @@ def sc_door_hand(c, T, lt, S):
     press = smooth(ramp(T, L("l05")["start"], L("l05")["start"] + 0.9))
     c.clear(col((0, 0, 0)))
     c.save(); cam(c, lerp(540, 600, q), lerp(1000, 900, q), lerp(1.8, 2.35, q))
-    fr = 0.5 + 1.4 * press
+    fr = 0.35 + 0.6 * press
     door(c, T, light=0.7, wheel_rot=0.3, seam_glow=0.3, frost=fr)
     hx, hy = lerp(900, 620, ease_out(press)), lerp(1500, 1180, ease_out(press))
     hand(c, hx, hy, 1.6, 1.0, ang=-0.08)
@@ -151,16 +181,38 @@ def sc_door_hand(c, T, lt, S):
 
 
 def sc_lullaby(c, T, lt, S):
+    """memory: a child's room before the end of the world, mom singing at the bed (warm, old film)."""
     l = S["lines"][0]
+    dur = S["t1"] - S["t0"]
     e = VE.at("l07", T)
+    weave = (vnoise(T * 6, 1) * 5, vnoise(T * 6, 2) * 3)
     c.clear(col((0, 0, 0)))
-    c.save(); cam(c, 540, 900, 1.15)
-    door(c, T, light=0.55, wheel_rot=0.3, seam_glow=0.45 + 0.4 * e, frost=0.9)
+    c.save(); c.translate(*weave)
+    cam(c, 540, 1000, 1.0 + 0.06 * ease_io(lt / dur))
+    # room: warm wall, floor line, a window with a blue night
+    c.drawRect(skia.Rect(-100, -100, W + 100, H + 100), paint(shader=linear(0, 0, 0, H, [(0, (60, 30, 14), 1), (0.62, (120, 62, 26), 1), (0.63, (40, 20, 10), 1), (1, (16, 8, 4), 1)])))
+    c.drawRect(skia.Rect(640, 360, 940, 760), paint((40, 60, 110), 1))
+    c.drawRect(skia.Rect(640, 360, 940, 760), paint((15, 8, 4), 1, stroke=18))
+    c.drawLine(790, 360, 790, 760, paint((15, 8, 4), 1, stroke=10)); c.drawLine(640, 560, 940, 560, paint((15, 8, 4), 1, stroke=10))
+    c.drawCircle(870, 450, 34, paint((220, 230, 255), 0.85, blur=3))
+    # lamp glow, breathing with her voice
+    c.drawRect(skia.Rect(-100, -100, W + 100, H + 100), paint(shader=radial(250, 900, 760, [(0, (255, 170, 80), 0.45 + 0.25 * e), (1, (255, 120, 40), 0)]), blend="screen"))
+    # the bed and the boy (only his head on the pillow)
+    c.drawRRect(skia.RRect.MakeRectXY(skia.Rect(430, 1080, 1060, 1260), 30, 30), paint((25, 12, 6), 1))
+    c.drawRRect(skia.RRect.MakeRectXY(skia.Rect(860, 1030, 1010, 1100), 30, 30), paint((150, 110, 80), 0.6))
+    c.drawCircle(930, 1040, 52, paint((18, 9, 5), 1))
+    c.drawRRect(skia.RRect.MakeRectXY(skia.Rect(440, 1060, 900, 1150), 40, 40), paint((70, 40, 22), 1))
+    # mom, sitting by the bed, swaying to the song
+    sway = math.sin(lt * 1.6) * 10
+    c.save(); c.translate(sway, 0); c.rotate(sway * 0.12)
+    mother(c, 330, 1270, 760, paint((14, 7, 4), 1), 0.0, T)
     c.restore()
-    # warm light bleeding through the seam, breathing with the song
-    c.drawRect(skia.Rect(0, 0, W, H), paint(shader=radial(540, 900, 700, [(0, (255, 160, 70), 0.12 + 0.25 * e), (1, (255, 120, 40), 0)]), blend="screen"))
-    rings(c, 540, 900, 520, 520, 6, T, a=0.10 + 0.25 * e, rgb=(255, 200, 150), speed=0.28)
-    return dict(grain=12, vig=1.0, bright=0.95 + 0.1 * e)
+    rings(c, 330 + sway, 600, 300, 300, 5, T, a=0.10 + 0.30 * e, rgb=(255, 210, 160), speed=0.3)
+    c.restore()
+    c.drawRect(skia.Rect(0, 0, W, H), paint(shader=radial(980, 200, 700, [(0, (255, 150, 60), 0.3), (1, (255, 120, 40), 0)]), blend="screen"))
+    out = smooth(ramp(lt, dur - 0.35, dur))
+    flick = 0.92 + 0.08 * vnoise(T * 20, 7)
+    return dict(grain=20, vig=1.0, scan=0.35, bright=flick * (1 - 0.8 * out), ca=3, glitch=0.6 if dur - lt < 0.12 else 0)
 
 
 def sc_dima_face(c, T, lt, S):
@@ -190,7 +242,7 @@ def sc_door_reach(c, T, lt, S):
     reach = smooth(ramp(T, S["t0"] + 0.1, t_w + 0.2))
     c.clear(col((0, 0, 0)))
     c.save(); cam(c, 540, 900, lerp(1.7, 2.0, reach))
-    door(c, T, light=0.75, wheel_rot=0.3, seam_glow=0.4, frost=1.3)
+    door(c, T, light=0.75, wheel_rot=0.3, seam_glow=0.4, frost=0.85)
     hand(c, lerp(900, 640, reach), lerp(1650, 1010, reach), 1.3, 1.0, ang=lerp(-0.3, -0.05, reach))
     c.restore()
     return dict(grain=13, vig=1.0, tint=(180, 200, 230, 0.3))
@@ -201,7 +253,7 @@ def sc_silence(c, T, lt, S):
     c.clear(col((0, 0, 0)))
     f = ramp(lt, 0, dur)
     c.save(); cam(c, 540, 900, 1.2)
-    door(c, T, light=0.18, wheel_rot=0.3, seam_glow=0.12 * (1 - f), frost=1.4)
+    door(c, T, light=0.18, wheel_rot=0.3, seam_glow=0.12 * (1 - f), frost=0.95)
     c.restore()
     # the cold breath along the bottom
     y = 1500
@@ -255,7 +307,7 @@ def sc_wheel(c, T, lt, S):
     c.clear(col((0, 0, 0)))
     z = 1.5 + 0.1 * lt / max(1e-6, S["t1"] - S["t0"])
     c.save(); cam(c, 540, 900, z)
-    door(c, T, light=0.78, shake=shk, wheel_rot=0.3 + r, seam_glow=0.3 + 0.3 * ramp(T, t_s, t_s + 2.0), frost=1.4)
+    door(c, T, light=0.78, shake=shk, wheel_rot=0.3 + r, seam_glow=0.3 + 0.3 * ramp(T, t_s, t_s + 2.0), frost=0.9)
     c.restore()
     return dict(grain=13, vig=1.0, ca=3 * shk * 4, tint=(180, 200, 230, 0.25))
 
@@ -291,12 +343,20 @@ def sc_open(c, T, lt, S):
     # the two door halves slide apart
     for side in (-1, 1):
         c.save()
-        c.clipRect(skia.Rect(0 if side < 0 else W / 2, 0, W / 2 if side < 0 else W, H))
         c.translate(side * k * W * 0.55, 0)
-        door(c, T, light=0.7, wheel_rot=0.3 + 1.55, seam_glow=0.0, frost=1.4)
+        c.clipRect(skia.Rect(-60 if side < 0 else W / 2, -60, W / 2 if side < 0 else W + 60, H + 60))
+        door(c, T, light=0.7, wheel_rot=0.3 + 1.55, seam_glow=0.0, frost=0.9)
         c.restore()
     c.drawRect(skia.Rect(0, 0, W, H), paint(shader=radial(540, 900, 900, [(0, (255, 160, 70), 0.30 * k), (1, (255, 120, 40), 0)]), blend="screen"))
-    g = 0.9 if 0 <= T - t_o < 0.1 else (0.9 if 0 <= T - t_c < 0.1 else 0.0)
+    # the count: we were five... and it keeps going
+    if T >= t_c:
+        a = smooth(ramp(T, t_c, t_c + 0.25))
+        cnt = 5 + n
+        end_q = T > S["t1"] - 0.7
+        label(c, "НАС", 540, 250, a * 0.9, WHITE, 34, "Inter-Bold", 12)
+        txt = "?" if end_q else str(cnt)
+        big_number(c, txt, 540, 470, 230, RED if (cnt > 7 or end_q) else YEL, a, glow=0.9)
+    g = 0.9 if 0 <= T - t_o < 0.1 else (0.9 if 0 <= T - t_c < 0.1 else (0.7 if 0 <= T - (S["t1"] - 0.7) < 0.08 else 0.0))
     return dict(grain=13, vig=0.9, glitch=g, bright=1.0 + 0.1 * k, ca=2)
 
 

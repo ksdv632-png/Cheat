@@ -370,6 +370,9 @@ def build():
     n = sec(ll["t1"] - ll["t0"])
     pad = (sine(220.0, n) + sine(277.2, n) * 0.7 + sine(329.6, n) * 0.5) * 0.06 * env_adsr(n, 0.8, 0.1, 1, 1.0)
     T.add(ll["t0"], stereo(filt(pad, "low", 900)))
+    tt2 = np.arange(n) / SR
+    rattle = filt(noise(n), "bp", (1500, 5000), 2) * (0.5 + 0.5 * np.sign(np.sin(2 * np.pi * 24 * tt2))) * 0.02
+    T.add(ll["t0"], stereo(rattle)); T.add(ll["t0"], sub_hit(1.5, 60, 30, 0.35)); T.add(ll["t1"] - 0.1, glitch_burst(0.12, 0.3, 11))
 
     # dima face: breath and his own heartbeat louder
     dm = at_scene("dima_face", 0)
