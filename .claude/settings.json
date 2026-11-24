@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "mcp__ElevenLabs",
-      "mcp__Zernio"
+      "mcp__Zernio",
+      "mcp__ElevenLabs__*",
+      "mcp__Zernio__*"
     ]
   }
 }
